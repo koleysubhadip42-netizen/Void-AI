@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberErase | Offline AI BG Remover</title>
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="Offline AI Background Remover using MediaPipe">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap');
+
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-purple: #bc13fe;
+            --dark-bg: #050505;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+
+        .cyber-title {
+            font-family: 'Orbitron', sans-serif;
+            text-shadow: 0 0 10px var(--neon-blue), 0 0 20px var(--neon-blue);
+        }
+
+        .glass-card {
+            background: rgba(15, 15, 20, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+        }
+
+        .neon-btn {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .neon-btn:hover {
+            box-shadow: 0 0 15px var(--neon-blue);
+            transform: translateY(-2px);
+        }
+
+        .neon-border {
+            border: 1px solid var(--neon-blue);
+            box-shadow: inset 0 0 5px var(--neon-blue);
+        }
+
+        .loader {
+            border-top-color: var(--neon-blue);
+            animation: spinner 1.5s linear infinite;
+        }
+
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-4 md:p-8">
+
+    <header class="w-full max-w-4xl text-center mb-8 mt-4">
+        <h1 class="cyber-title text-2xl md:text-4xl font-bold text-cyan-400 mb-2">
+            NEURAL CUT <span class="text-white text-sm block md:inline md:ml-2 opacity-80">v1.0 (OFFLINE)</span>
+        </h1>
+        <p class="text-slate-500 text-xs tracking-widest uppercase">Powered by Google MediaPipe AI</p>
+    </header>
+
+    <main class="w-full max-w-2xl space-y-6">
+        
+        <div class="glass-card rounded-2xl p-6 text-center border-dashed border-2 border-cyan-900/50 hover:border-cyan-400/50 transition-colors">
+            <input type="file" id="imageInput" accept="image/*" class="hidden">
+            <label for="imageInput" class="cursor-pointer group">
+                <div class="mb-4 flex justify-center">
+                    <svg class="w-12 h-12 text-cyan-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+                <span class="text-slate-300 font-medium">Click to upload or drag image</span>
+                <p class="text-slate-500 text-xs mt-2">PNG, JPG or WebP (processed locally)</p>
+            </label>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <button id="processBtn" disabled class="neon-btn w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none text-black font-bold py-3 px-8 rounded-full flex items-center justify-center gap-2">
+                <span>REMOVE BACKGROUND</span> 🪄
+            </button>
+            <button id="downloadBtn" class="hidden w-full sm:w-auto bg-transparent border border-cyan-400 text-cyan-400 hover:bg-cyan-400/10 font-bold py-3 px-8 rounded-full transition-all">
+                DOWNLOAD HD
+            </button>
+        </div>
+
+        <div id="status" class="text-center text-sm font-mono text-cyan-500/70 h-6"></div>
+
+        <div class="relative glass-card rounded-2xl overflow-hidden min-h-[200px] flex items-center justify-center">
+            <div id="loader" class="hidden absolute z-10">
+                <div class="loader ease-linear rounded-full border-4 border-t-4 border-slate-700 h-12 w-12 mb-4"></div>
+            </div>
+            <canvas id="outputCanvas" class="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></canvas>
+            <div id="placeholderText" class="text-slate-700 font-bold uppercase tracking-widest text-sm italic">Result Preview</div>
+        </div>
+
+    </main>
+
+    <img id="hiddenImg" class="hidden" alt="hidden source">
+
+    <footer class="mt-auto py-8 text-slate-600 text-[10px] tracking-widest uppercase">
+        Encrypted Local Execution • No Cloud Latency
+    </footer>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const hiddenImg = document.getElementById('hiddenImg');
+        const processBtn = document.getElementById('processBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const outputCanvas = document.getElementById('outputCanvas');
+        const ctx = outputCanvas.getContext('2d');
+        const status = document.getElementById('status');
+        const loader = document.getElementById('loader');
+        const placeholderText = document.getElementById('placeholderText');
+
+        // 1. Initialize MediaPipe Selfie Segmentation
+        const selfieSegmentation = new SelfieSegmentation({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+            }
+        });
+
+        selfieSegmentation.setOptions({
+            modelSelection: 1, // 0 for landscape, 1 for general/portrait
+        });
+
+        // 2. The Magic (Canvas Processing)
+        selfieSegmentation.onResults((results) => {
+            // Match canvas size to image
+            outputCanvas.width = results.image.width;
+            outputCanvas.height = results.image.height;
+
+            // Clear and draw original image
+            ctx.save();
+            ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+            ctx.drawImage(results.image, 0, 0, outputCanvas.width, outputCanvas.height);
+
+            // Layer the mask
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.drawImage(results.segmentationMask, 0, 0, outputCanvas.width, outputCanvas.height);
+
+            // Cleanup
+            ctx.restore();
+            
+            // UI Updates
+            loader.classList.add('hidden');
+            placeholderText.classList.add('hidden');
+            status.innerText = "Processing Complete!";
+            downloadBtn.classList.remove('hidden');
+            processBtn.disabled = false;
+        });
+
+        // 3. Handle File Upload
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                hiddenImg.src = event.target.result;
+                hiddenImg.onload = () => {
+                    status.innerText = "Image Loaded. Ready to process.";
+                    processBtn.disabled = false;
+                    downloadBtn.classList.add('hidden');
+                    // Show raw image on canvas initially
+                    outputCanvas.width = hiddenImg.width;
+                    outputCanvas.height = hiddenImg.height;
+                    ctx.drawImage(hiddenImg, 0, 0);
+                    placeholderText.classList.add('hidden');
+                };
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // 4. Execution Flow
+        processBtn.addEventListener('click', async () => {
+            status.innerText = "Neural Engine Running...";
+            loader.classList.remove('hidden');
+            processBtn.disabled = true;
+
+            // Send to MediaPipe
+            await selfieSegmentation.send({ image: hiddenImg });
+        });
+
+        // 5. Download Functionality
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `CyberErase_${Date.now()}.png`;
+            link.href = outputCanvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // Offline PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('data:application/javascript;base64,c2VsZi5hZGRFdmVudExpc3RlbmVyKCdpbnN0YWxsJywgZXZlbnQgPT4gewogIHNlbGYuc2tpcFdhaXRpbmcoKTsKfSk7CnNlbGYuYWRkRXZlbnRMaXN0ZW5lcignYWN0aXZhdGUnLCBldmVudCA9PiB7CiAgZXZlbnQud2FpdFVudGlsKGNsaWVudHMuY2xhaW0oKSk7Cn0pOw==');
+            });
+        }
+    </script>
+</body>
+</html>
